@@ -88,6 +88,9 @@ public class SecurityConfig {
         
         // CRM Module Endpoints
         .requestMatchers("/api/crm/**").authenticated()
+        .requestMatchers("/api/purchases/**").hasAnyRole("SUPER_ADMIN", "PURCHASE_ADMIN")
+        .requestMatchers("/api/sales/**").authenticated()
+        .requestMatchers("/api/production/**").authenticated()
                 
         .anyRequest().authenticated() // Secure all other API endpoints by default
       )
