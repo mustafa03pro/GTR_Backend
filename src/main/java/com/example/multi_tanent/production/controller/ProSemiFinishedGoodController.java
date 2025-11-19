@@ -74,7 +74,7 @@ import com.example.multi_tanent.production.dto.ProSemiFinishedGoodResponse;
 import com.example.multi_tanent.production.services.ProSemiFinishedGoodService;
 
 @RestController
-@RequestMapping("/api/products/semi-finished")
+@RequestMapping("/api/production/semi-finished")
 @RequiredArgsConstructor
 @PreAuthorize("isAuthenticated()")
 @CrossOrigin(origins = "*")

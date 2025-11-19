@@ -916,7 +916,7 @@ e.setToolStations(stations);
  b.priceCategoryId(e.getPriceCategory().getId()).priceCategoryName(e.getPriceCategory().getName());
  }
  if (e.getTax() != null) {
- b.taxId(e.getTax().getId()).taxName(e.getTax().getName());
+ b.taxId(e.getTax().getId()).taxName(e.getTax().getCode());
 }
 
  b.bomItemIds(e.getBomItems() != null ? e.getBomItems().stream().map(ProRawMaterials::getId).collect(Collectors.toSet()) : Collections.emptySet());
