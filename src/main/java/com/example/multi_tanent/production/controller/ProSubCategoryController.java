@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/production/sub-categories")
+@RequestMapping("/api/production/subcategories")
 @PreAuthorize("isAuthenticated()")
 @RequiredArgsConstructor
 public class ProSubCategoryController {
