@@ -1,58 +1,63 @@
 package com.example.multi_tanent.purchases.controller;
 
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.*;
+import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 
-import com.example.multi_tanent.purchases.entity.PurPurchaseOrder;
+import com.example.multi_tanent.purchases.dto.PurPurchaseOrderRequest;
+import com.example.multi_tanent.purchases.dto.PurPurchaseOrderResponse;
 import com.example.multi_tanent.purchases.service.PurPurchaseOrderService;
 
-import java.io.IOException;
-import java.util.List;
-
 @RestController
-@RequestMapping("/api/purchases/purchase-orders")
+@RequestMapping("/api/purchase/orders")
+@RequiredArgsConstructor
 @CrossOrigin(origins = "*")
-@PreAuthorize("hasAnyRole('SUPER_ADMIN','PURCHASE_ADMIN')")
 public class PurPurchaseOrderController {
+
     private final PurPurchaseOrderService service;
 
-    public PurPurchaseOrderController(PurPurchaseOrderService service) {
-        this.service = service;
+    @PostMapping
+    public ResponseEntity<PurPurchaseOrderResponse> create(@Valid @RequestBody PurPurchaseOrderRequest req) {
+        PurPurchaseOrderResponse resp = service.create(req);
+        return ResponseEntity.status(HttpStatus.CREATED).body(resp);
     }
 
     @GetMapping
-    public List<PurPurchaseOrder> getAll() { return service.getAll(); }
-
-    @GetMapping("/{id}")
-    public ResponseEntity<PurPurchaseOrder> getById(@PathVariable Long id) {
-        PurPurchaseOrder po = service.getById(id);
-        return po != null ? ResponseEntity.ok(po) : ResponseEntity.notFound().build();
+    public ResponseEntity<Page<PurPurchaseOrderResponse>> list(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "createdAt,desc") String sort // e.g. "createdAt,desc"
+    ) {
+        Sort s = Sort.by(Sort.Direction.DESC, "createdAt");
+        try {
+            String[] sp = sort.split(",");
+            if (sp.length == 2) {
+                s = Sort.by(Sort.Direction.fromString(sp[1]), sp[0]);
+            }
+        } catch (Exception ignored) {
+        }
+        Pageable p = PageRequest.of(page, size, s);
+        return ResponseEntity.ok(service.list(p));
     }
 
-    @PostMapping
-    public PurPurchaseOrder create(@RequestBody PurPurchaseOrder po) {
-        return service.save(po);
+    @GetMapping("/{id}")
+    public ResponseEntity<PurPurchaseOrderResponse> getById(@PathVariable Long id) {
+        PurPurchaseOrderResponse resp = service.getById(id);
+        return ResponseEntity.ok(resp);
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<PurPurchaseOrder> update(@PathVariable Long id, @RequestBody PurPurchaseOrder updated) {
-        PurPurchaseOrder po = service.getById(id);
-        if (po == null) return ResponseEntity.notFound().build();
-        updated.setId(id);
-        return ResponseEntity.ok(service.save(updated));
-    }
-
-    @PostMapping("/{id}/attachment")
-    public ResponseEntity<String> uploadFile(@PathVariable Long id, @RequestParam("file") MultipartFile file) throws IOException {
-        PurPurchaseOrder po = service.getById(id);
-        if (po == null) return ResponseEntity.notFound().build();
-        po.setAttachment(file.getBytes());
-        service.save(po);
-        return ResponseEntity.ok("File uploaded");
+    public ResponseEntity<PurPurchaseOrderResponse> update(@PathVariable Long id,
+            @Valid @RequestBody PurPurchaseOrderRequest req) {
+        PurPurchaseOrderResponse resp = service.update(id, req);
+        return ResponseEntity.ok(resp);
     }
 
     @DeleteMapping("/{id}")
-    public void delete(@PathVariable Long id) { service.delete(id); }
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
+        service.delete(id);
+        return ResponseEntity.noContent().build();
+    }
 }

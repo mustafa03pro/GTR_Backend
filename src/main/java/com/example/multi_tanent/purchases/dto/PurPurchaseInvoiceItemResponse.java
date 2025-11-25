@@ -1,17 +1,14 @@
 package com.example.multi_tanent.purchases.dto;
 
+import lombok.*;
+
 import java.math.BigDecimal;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
-public class PurPurchaseOrderItemResponse {
+public class PurPurchaseInvoiceItemResponse {
     private Long id;
     private Integer lineNumber;
+
     private Long categoryId;
     private String categoryName;
     private Long subCategoryId;
@@ -21,16 +18,17 @@ public class PurPurchaseOrderItemResponse {
     private String itemName;
     private String description;
 
-    private BigDecimal quantity;
+    private BigDecimal quantityGross;
+    private BigDecimal quantityNet;
     private Long unitId;
     private String unitName;
+
     private BigDecimal rate;
     private BigDecimal amount;
 
     private Long taxId;
     private String taxName;
-    private Boolean taxExempt;
     private BigDecimal taxPercent;
+
     private BigDecimal lineDiscount;
 }
-

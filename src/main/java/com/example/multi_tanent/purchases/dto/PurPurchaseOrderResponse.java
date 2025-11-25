@@ -1,31 +1,46 @@
 package com.example.multi_tanent.purchases.dto;
 
-import lombok.Data;
+// package com.example.multi_tanent.purchase.dto;
+
+import lombok.*;
+
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
-@Data
+@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class PurPurchaseOrderResponse {
     private Long id;
-    private String poNumber;
+
+    private String orderCategory;
+    private Long supplierId;
     private String supplierName;
-    private String location;
-    private String poType;
-    private String referenceNo;
-    private LocalDate poDate;
-    private String projectNumber;
-    private boolean discountAtItemLevel;
-    private Double subtotal;
-    private Double totalDiscount;
-    private Double totalTax;
-    private Double grossTotal;
-    private Double otherCharges;
-    private Double grandTotal;
-    private String deliveryTo;
-    private String customerDetails;
+
+    private String poNumber;
+    private String reference;
+    private LocalDate date;
+
+    private String discountMode;
+    private String currency;
     private String remark;
-    private String emailTo;
-    private String attachmentUrl; // URL to the attachment instead of raw bytes
+    private String status;
+
+    private String createdBy;
+    private LocalDateTime createdAt;
+
+    private BigDecimal subTotal;
+    private BigDecimal totalDiscount;
+    private BigDecimal totalTax;
+    private BigDecimal otherCharges;
+    private BigDecimal totalAmount;
 
     private List<PurPurchaseOrderItemResponse> items;
+    private List<PurPurchaseOrderAttachmentResponse> attachments;
+    private Long tenantId;
 }
+
+
+
+
+

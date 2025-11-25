@@ -31,4 +31,5 @@ public class BaseCustomer extends PartyBase {
 
     @Column(name = "active")
     private Boolean active = Boolean.TRUE;
+
 }

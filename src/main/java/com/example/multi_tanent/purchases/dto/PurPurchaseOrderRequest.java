@@ -1,28 +1,39 @@
 package com.example.multi_tanent.purchases.dto;
 
-import lombok.Data;
+// package com.example.multi_tanent.purchase.dto;
+
+import jakarta.validation.constraints.NotNull;
+import lombok.*;
+
 import java.time.LocalDate;
+
 import java.util.List;
 
-@Data
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class PurPurchaseOrderRequest {
-    private String supplierName;
-    private String location;
-    private String poType;
-    private String referenceNo;
-    private LocalDate poDate;
-    private String projectNumber;
-    private boolean discountAtItemLevel;
-    private Double subtotal;
-    private Double totalDiscount;
-    private Double totalTax;
-    private Double grossTotal;
-    private Double otherCharges;
-    private Double grandTotal;
-    private String deliveryTo;
-    private String customerDetails;
-    private String remark;
-    private String emailTo;
 
+    private String orderCategory;
+
+    private Long supplierId;
+
+    private String poNumber;
+    private String reference;
+
+    @NotNull
+    private LocalDate date;
+
+    private String discountMode;
+    private String currency;
+    private String remark;
+    private String status;
+
+    private String createdBy;
+
+    // lists
     private List<PurPurchaseOrderItemRequest> items;
+    private List<PurPurchaseOrderAttachmentRequest> attachments;
 }

@@ -1,163 +1,348 @@
 package com.example.multi_tanent.purchases.service;
 
-import org.springframework.stereotype.Service;
-
+import com.example.multi_tanent.config.TenantContext;
+import com.example.multi_tanent.production.repository.ProCategoryRepository;
+import com.example.multi_tanent.production.repository.ProSubCategoryRepository;
+import com.example.multi_tanent.production.repository.ProRawMaterialsRepository;
+import com.example.multi_tanent.production.repository.ProUnitRepository;
+import com.example.multi_tanent.purchases.dto.*;
+import com.example.multi_tanent.purchases.dto.PurPurchaseOrderResponse.PurPurchaseOrderResponseBuilder;
 import com.example.multi_tanent.purchases.entity.PurPurchaseOrder;
+import com.example.multi_tanent.purchases.entity.PurPurchaseOrderAttachment;
+import com.example.multi_tanent.purchases.entity.PurPurchaseOrderItem;
 import com.example.multi_tanent.purchases.repository.PurPurchaseOrderRepository;
+import com.example.multi_tanent.production.repository.ProTaxRepository;
+import com.example.multi_tanent.spersusers.enitity.Tenant;
+//import com.example.multi_tanent.spersusers.entity.Tenant;
+import com.example.multi_tanent.spersusers.repository.PartyRepository;
+import com.example.multi_tanent.spersusers.repository.TenantRepository;
+import jakarta.persistence.EntityNotFoundException;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.*;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDateTime;
+import java.util.*;
+import java.util.stream.Collectors;
 
+/**
+ * Service handling PurPurchaseOrder CRUD and listing.
+ */
 @Service
+@RequiredArgsConstructor
+@Transactional("tenantTx")
 public class PurPurchaseOrderService {
-    private final PurPurchaseOrderRepository orderRepo;
 
-    public PurPurchaseOrderService(PurPurchaseOrderRepository orderRepo) {
-        this.orderRepo = orderRepo;
+    private final PurPurchaseOrderRepository repo;
+    private final TenantRepository tenantRepo;
+    private final PartyRepository supplierRepo;
+    private final ProRawMaterialsRepository rawMaterialRepo;
+    private final ProUnitRepository unitRepo;
+    private final ProTaxRepository taxRepo;
+    private final ProCategoryRepository categoryRepo;
+    private final ProSubCategoryRepository subCategoryRepo;
+
+    private Tenant currentTenant() {
+        String key = TenantContext.getTenantId();
+        return tenantRepo.findFirstByOrderByIdAsc()
+                .orElseThrow(() -> new IllegalStateException("Tenant not resolved for key: " + key));
     }
 
-    public List<PurPurchaseOrder> getAll() { return orderRepo.findAll(); }
+    public PurPurchaseOrderResponse create(PurPurchaseOrderRequest req) {
+        Tenant t = currentTenant();
 
-    public PurPurchaseOrder getById(Long id) {
-        return orderRepo.findById(id).orElse(null);
-    }
+        PurPurchaseOrder po = new PurPurchaseOrder();
+        po.setOrderCategory(req.getOrderCategory());
+        po.setPoNumber(req.getPoNumber());
+        po.setReference(req.getReference());
+        po.setDate(req.getDate());
+        po.setDiscountMode(req.getDiscountMode());
+        po.setCurrency(req.getCurrency());
+        po.setRemark(req.getRemark());
+        po.setStatus(req.getStatus());
+        po.setCreatedBy(req.getCreatedBy());
+        po.setCreatedAt(LocalDateTime.now());
+        po.setTenant(t);
 
-    public PurPurchaseOrder save(PurPurchaseOrder order) {
-        if (order.getPoNumber() == null || order.getPoNumber().isEmpty()) {
-            long count = orderRepo.count() + 1;
-            order.setPoNumber(String.format("PO-%04d", count));
+        if (req.getSupplierId() != null) {
+            po.setSupplier(supplierRepo.findById(req.getSupplierId())
+                    .orElseThrow(() -> new EntityNotFoundException("Supplier not found: " + req.getSupplierId())));
         }
-        order.getItems().forEach(i -> i.setPurchaseOrder(order));
-        return orderRepo.save(order);
+
+        // Items
+        if (req.getItems() != null && !req.getItems().isEmpty()) {
+            po.setItems(new ArrayList<>());
+            for (PurPurchaseOrderItemRequest ir : req.getItems()) {
+                PurPurchaseOrderItem it = mapItemRequest(ir);
+                po.addItem(it);
+            }
+        }
+
+        // Attachments
+        if (req.getAttachments() != null && !req.getAttachments().isEmpty()) {
+            po.setAttachments(new ArrayList<>());
+            for (PurPurchaseOrderAttachmentRequest ar : req.getAttachments()) {
+                PurPurchaseOrderAttachment a = new PurPurchaseOrderAttachment();
+                a.setFileName(ar.getFileName());
+                a.setFilePath(ar.getFilePath());
+                a.setUploadedBy(ar.getUploadedBy());
+                a.setUploadedAt(ar.getUploadedAt());
+                po.addAttachment(a);
+            }
+        }
+
+        computeTotals(po);
+
+        PurPurchaseOrder saved = repo.save(po);
+        return toResponse(saved);
     }
 
-    public void delete(Long id) { orderRepo.deleteById(id); }
+    @Transactional(readOnly = true)
+    public Page<PurPurchaseOrderResponse> list(Pageable pageable) {
+        Tenant t = currentTenant();
+        return repo.findByTenantId(t.getId(), pageable).map(this::toResponse);
+    }
+
+    @Transactional(readOnly = true)
+    public PurPurchaseOrderResponse getById(Long id) {
+        Tenant t = currentTenant();
+        PurPurchaseOrder po = repo.findByIdAndTenantId(id, t.getId())
+                .orElseThrow(() -> new EntityNotFoundException("Purchase order not found: " + id));
+        return toResponse(po);
+    }
+
+    public PurPurchaseOrderResponse update(Long id, PurPurchaseOrderRequest req) {
+        Tenant t = currentTenant();
+        PurPurchaseOrder po = repo.findByIdAndTenantId(id, t.getId())
+                .orElseThrow(() -> new EntityNotFoundException("Purchase order not found: " + id));
+
+        if (req.getOrderCategory() != null)
+            po.setOrderCategory(req.getOrderCategory());
+        if (req.getPoNumber() != null)
+            po.setPoNumber(req.getPoNumber());
+        if (req.getReference() != null)
+            po.setReference(req.getReference());
+        if (req.getDate() != null)
+            po.setDate(req.getDate());
+        if (req.getDiscountMode() != null)
+            po.setDiscountMode(req.getDiscountMode());
+        if (req.getCurrency() != null)
+            po.setCurrency(req.getCurrency());
+        if (req.getRemark() != null)
+            po.setRemark(req.getRemark());
+        if (req.getStatus() != null)
+            po.setStatus(req.getStatus());
+        if (req.getCreatedBy() != null)
+            po.setCreatedBy(req.getCreatedBy());
+
+        // supplier: if provided set; if null (and request included supplier field)
+        // clear
+        if (req.getSupplierId() != null) {
+            po.setSupplier(supplierRepo.findById(req.getSupplierId())
+                    .orElseThrow(() -> new EntityNotFoundException("Supplier not found: " + req.getSupplierId())));
+        } else {
+            // if the caller intended to clear supplier they can send supplierId=null; we'll
+            // clear it
+            po.setSupplier(null);
+        }
+
+        // Replace items when provided (clear and add)
+        if (req.getItems() != null) {
+            // Use a while loop to safely remove items and trigger orphanRemoval
+            while (!po.getItems().isEmpty()) {
+                po.removeItem(po.getItems().get(0));
+            }
+            for (PurPurchaseOrderItemRequest ir : req.getItems()) {
+                PurPurchaseOrderItem it = mapItemRequest(ir);
+                po.addItem(it);
+            }
+        }
+
+        // Replace attachments when provided
+        if (req.getAttachments() != null) {
+            while (!po.getAttachments().isEmpty()) {
+                po.removeAttachment(po.getAttachments().get(0));
+            }
+            for (PurPurchaseOrderAttachmentRequest ar : req.getAttachments()) {
+                PurPurchaseOrderAttachment a = new PurPurchaseOrderAttachment();
+                a.setFileName(ar.getFileName());
+                a.setFilePath(ar.getFilePath());
+                a.setUploadedBy(ar.getUploadedBy());
+                a.setUploadedAt(ar.getUploadedAt());
+                po.addAttachment(a);
+            }
+        }
+
+        computeTotals(po);
+
+        PurPurchaseOrder updated = repo.save(po);
+        return toResponse(updated);
+    }
+
+    public void delete(Long id) {
+        Tenant t = currentTenant();
+        PurPurchaseOrder po = repo.findByIdAndTenantId(id, t.getId())
+                .orElseThrow(() -> new EntityNotFoundException("Purchase order not found: " + id));
+        repo.delete(po);
+    }
+
+    /* ---------------- helpers ---------------- */
+
+    private PurPurchaseOrderItem mapItemRequest(PurPurchaseOrderItemRequest r) {
+        PurPurchaseOrderItem it = new PurPurchaseOrderItem();
+        it.setLineNumber(r.getLineNumber());
+        it.setDescription(r.getDescription());
+        it.setQuantity(Optional.ofNullable(r.getQuantity()).orElse(BigDecimal.ZERO));
+        it.setRate(r.getRate());
+        it.setLineDiscount(Optional.ofNullable(r.getLineDiscount()).orElse(BigDecimal.ZERO));
+        it.setTaxExempt(Optional.ofNullable(r.getTaxExempt()).orElse(Boolean.FALSE));
+        it.setTaxPercent(r.getTaxPercent());
+
+        if (r.getItemId() != null) {
+            it.setItem(rawMaterialRepo.findById(r.getItemId())
+                    .orElseThrow(() -> new EntityNotFoundException("Item not found: " + r.getItemId())));
+        }
+
+        if (r.getUnitId() != null) {
+            it.setUnit(unitRepo.findById(r.getUnitId())
+                    .orElseThrow(() -> new EntityNotFoundException("Unit not found: " + r.getUnitId())));
+        }
+
+        if (r.getTaxId() != null) {
+            it.setTax(taxRepo.findById(r.getTaxId())
+                    .orElseThrow(() -> new EntityNotFoundException("Tax not found: " + r.getTaxId())));
+        }
+
+        if (r.getCategoryId() != null) {
+            it.setCategory(categoryRepo.findById(r.getCategoryId())
+                    .orElseThrow(() -> new EntityNotFoundException("Category not found: " + r.getCategoryId())));
+        }
+        if (r.getSubCategoryId() != null) {
+            it.setSubCategory(subCategoryRepo.findById(r.getSubCategoryId())
+                    .orElseThrow(() -> new EntityNotFoundException("Subcategory not found: " + r.getSubCategoryId())));
+        }
+
+        // compute amount (quantity * rate - discount)
+        BigDecimal q = Optional.ofNullable(it.getQuantity()).orElse(BigDecimal.ZERO);
+        BigDecimal rate = Optional.ofNullable(it.getRate()).orElse(BigDecimal.ZERO);
+        BigDecimal lineDiscount = Optional.ofNullable(it.getLineDiscount()).orElse(BigDecimal.ZERO);
+        BigDecimal amount = q.multiply(rate).subtract(lineDiscount);
+        it.setAmount(amount.max(BigDecimal.ZERO));
+        return it;
+    }
+
+    private void computeTotals(PurPurchaseOrder po) {
+        BigDecimal subTotal = BigDecimal.ZERO;
+        BigDecimal totalDiscount = BigDecimal.ZERO;
+        BigDecimal totalTax = BigDecimal.ZERO;
+
+        if (po.getItems() != null) {
+            for (PurPurchaseOrderItem it : po.getItems()) {
+                BigDecimal amount = Optional.ofNullable(it.getAmount()).orElse(BigDecimal.ZERO);
+                BigDecimal discount = Optional.ofNullable(it.getLineDiscount()).orElse(BigDecimal.ZERO);
+                subTotal = subTotal.add(amount);
+                totalDiscount = totalDiscount.add(discount);
+
+                boolean taxExempt = Optional.ofNullable(it.getTaxExempt()).orElse(Boolean.FALSE);
+                if (!taxExempt) {
+                    BigDecimal taxPercent = Optional.ofNullable(it.getTaxPercent())
+                            .orElse(Optional.ofNullable(it.getTax() != null ? it.getTax().getRate() : null)
+                                    .orElse(BigDecimal.ZERO));
+                    BigDecimal taxValue = amount.multiply(taxPercent).divide(BigDecimal.valueOf(100), 2,
+                            RoundingMode.HALF_UP);
+                    totalTax = totalTax.add(taxValue);
+                }
+            }
+        }
+
+        po.setSubTotal(subTotal);
+        po.setTotalDiscount(totalDiscount);
+        po.setTotalTax(totalTax);
+        if (po.getOtherCharges() == null)
+            po.setOtherCharges(BigDecimal.ZERO);
+
+        BigDecimal total = subTotal.subtract(totalDiscount).add(totalTax)
+                .add(Optional.ofNullable(po.getOtherCharges()).orElse(BigDecimal.ZERO));
+        po.setTotalAmount(total.max(BigDecimal.ZERO));
+    }
+
+    /* ---------------- response mapping ---------------- */
+
+    private PurPurchaseOrderResponse toResponse(PurPurchaseOrder po) {
+        PurPurchaseOrderResponseBuilder rb = PurPurchaseOrderResponse.builder()
+                .id(po.getId())
+                .orderCategory(po.getOrderCategory())
+                .poNumber(po.getPoNumber())
+                .reference(po.getReference())
+                .date(po.getDate())
+                .discountMode(po.getDiscountMode())
+                .currency(po.getCurrency())
+                .remark(po.getRemark())
+                .status(po.getStatus())
+                .createdBy(po.getCreatedBy())
+                .createdAt(po.getCreatedAt())
+                .subTotal(po.getSubTotal())
+                .totalDiscount(po.getTotalDiscount())
+                .totalTax(po.getTotalTax())
+                .otherCharges(po.getOtherCharges())
+                .totalAmount(po.getTotalAmount())
+                .tenantId(po.getTenant() != null ? po.getTenant().getId() : null);
+
+        if (po.getSupplier() != null) {
+            rb.supplierId(po.getSupplier().getId()).supplierName(po.getSupplier().getCompanyName());
+        }
+
+        List<PurPurchaseOrderItemResponse> items = Optional.ofNullable(po.getItems()).orElse(Collections.emptyList())
+                .stream()
+                .map(it -> {
+                    var category = it.getCategory();
+                    var subCategory = it.getSubCategory();
+                    var item = it.getItem();
+                    var unit = it.getUnit();
+                    var tax = it.getTax();
+
+                    return PurPurchaseOrderItemResponse.builder()
+                            .id(it.getId())
+                            .lineNumber(it.getLineNumber())
+                            .categoryId(category != null ? category.getId() : null)
+                            .categoryName(category != null ? category.getName() : null)
+                            .subCategoryId(subCategory != null ? subCategory.getId() : null)
+                            .subCategoryName(subCategory != null ? subCategory.getName() : null)
+                            .itemId(item != null ? item.getId() : null)
+                            .itemName(item != null ? item.getName() : null)
+                            .description(it.getDescription())
+                            .quantity(it.getQuantity())
+                            .unitId(unit != null ? unit.getId() : null)
+                            .unitName(unit != null ? unit.getName() : null)
+                            .rate(it.getRate())
+                            .amount(it.getAmount())
+                            .taxId(tax != null ? tax.getId() : null)
+                            .taxName(tax != null ? tax.getCode() : null)
+                            .taxExempt(it.getTaxExempt())
+                            .taxPercent(it.getTaxPercent())
+                            .lineDiscount(it.getLineDiscount())
+                            .build();
+                }).collect(Collectors.toList());
+
+        rb.items(items);
+
+        List<PurPurchaseOrderAttachmentResponse> atts = Optional.ofNullable(po.getAttachments())
+                .orElse(Collections.emptyList())
+                .stream()
+                .map(a -> PurPurchaseOrderAttachmentResponse.builder()
+                        .id(a.getId())
+                        .fileName(a.getFileName())
+                        .filePath(a.getFilePath())
+                        .uploadedBy(a.getUploadedBy())
+                        .uploadedAt(a.getUploadedAt())
+                        .build())
+                .collect(Collectors.toList());
+
+        rb.attachments(atts);
+
+        return rb.build();
+    }
 }
-
-
-
-
-//
-//import java.time.LocalDate;
-//import java.time.format.DateTimeFormatter;
-//import java.util.List;
-//
-//import org.springframework.stereotype.Service;
-//import org.springframework.transaction.annotation.Transactional;
-//
-//import com.erp.purchase.entity.PurchaseOrder;
-//import com.erp.purchase.entity.PurchaseOrderItem;
-//import com.erp.purchase.repository.PurchaseOrderRepository;
-//
-//import lombok.RequiredArgsConstructor;
-//
-//@Service
-//@RequiredArgsConstructor
-//@Transactional
-//public class PurchaseOrderServiceImpl implements PurchaseOrderService {
-//
-//    private final PurchaseOrderRepository poRepository;
-//
-//    @Override
-//    public PurchaseOrder create(PurchaseOrder po) {
-//        // generate PO number if not provided
-//        if (po.getPoNumber() == null || po.getPoNumber().isBlank()) {
-//            po.setPoNumber(generatePoNumber());
-//        }
-//        // ensure items reference parent and compute totals
-//        computeTotals(po);
-//        po.getItems().forEach(item -> item.setPurchaseOrder(po));
-//        return poRepository.save(po);
-//    }
-//
-//    @Override
-//    public PurchaseOrder update(Long id, PurchaseOrder po) {
-//    	PurchaseOrder existing = poRepository.findById(id)
-//                .orElseThrow(() -> new RuntimeException("PO not found: " + id));
-//
-//    	
-//
-//    	
-//        
-//        // update fields
-//        existing.setSupplierName(po.getSupplierName());
-//        existing.setLocation(po.getLocation());
-//        existing.setReferenceNo(po.getReferenceNo());
-//        existing.setPoDate(po.getPoDate());
-//        existing.setRemark(po.getRemark());
-//        existing.setProjectNumber(po.getProjectNumber());
-//        existing.setPoType(po.getPoType());
-//        existing.setDiscountAtItemLevel(po.getDiscountAtItemLevel());
-//        existing.setDeliveryTo(po.getDeliveryTo());
-//        existing.setCustomerDetails(po.getCustomerDetails());
-//        existing.setOtherCharges(po.getOtherCharges());
-//
-//       
-//        // clear old items
-//   	 existing.getItems().clear();
-//
-//   	 // add new ones
-//   	 if (po.getItems() != null) {
-//   	     for (PurchaseOrderItem item : po.getItems()) {
-//   	         existing.addItem(item); // this sets both sides
-//   	     }
-//   	 }
-//        
-//        computeTotals(existing);
-//        return poRepository.save(existing);
-//    }
-//
-//    @Override
-//    public void delete(Long id) {
-//        poRepository.deleteById(id);
-//    }
-//
-//    @Override
-//    @Transactional(readOnly = true)
-//    public PurchaseOrder getById(Long id) {
-//        return poRepository.findById(id).orElse(null);
-//    }
-//
-//    @Override
-//    @Transactional(readOnly = true)
-//    public List<PurchaseOrder> getAll() {
-//        return poRepository.findAll();
-//    }
-//
-//    @Override
-//    public String generatePoNumber() {
-//        String date = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-//        long count = poRepository.count() + 1;
-//        return "PO-" + date + "-" + String.format("%04d", count);
-//    }
-//
-//    // helper to compute totals
-//    private void computeTotals(PurchaseOrder po) {
-//        double subtotal = 0.0;
-//        double totalDiscount = 0.0;
-//        double totalTax = 0.0;
-//
-//        if (po.getItems() != null) {
-//            for (PurchaseOrderItem it : po.getItems()) {
-//                int qty = it.getQuantity() == null ? 0 : it.getQuantity();
-//                double rate = it.getRate() == null ? 0.0 : it.getRate();
-//                double amount = qty * rate;
-//                double discount = amount * ((it.getDiscountPercent() == null ? 0.0 : it.getDiscountPercent()) / 100.0);
-//                double taxable = amount - discount;
-//                double tax = taxable * ((it.getTaxPercent() == null ? 0.0 : it.getTaxPercent()) / 100.0);
-//                double finalAmount = taxable + tax;
-//
-//                it.setAmount(finalAmount);
-//                subtotal += amount;
-//                totalDiscount += discount;
-//                totalTax += tax;
-//            }
-//        }
-//        po.setSubtotal(subtotal);
-//        po.setTotalDiscount(totalDiscount);
-//        po.setTotalTax(totalTax);
-//        double other = po.getOtherCharges() == null ? 0.0 : po.getOtherCharges();
-//        po.setGrandTotal(subtotal - totalDiscount + totalTax + other);
-//    }
-//   
-//
-//}

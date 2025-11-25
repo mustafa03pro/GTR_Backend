@@ -1,36 +1,35 @@
 package com.example.multi_tanent.purchases.dto;
 
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.NotNull;
+import lombok.*;
+
 import java.math.BigDecimal;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
-public class PurPurchaseOrderItemResponse {
-    private Long id;
+public class PurPurchaseInvoiceItemRequest {
+    @NotNull
     private Integer lineNumber;
-    private Long categoryId;
-    private String categoryName;
-    private Long subCategoryId;
-    private String subCategoryName;
 
+    private Long categoryId;
+    private Long subCategoryId;
     private Long itemId;
-    private String itemName;
+
     private String description;
 
-    private BigDecimal quantity;
+    // gross/net amounts
+    @DecimalMin("0.000001")
+    private BigDecimal quantityGross;
+    @DecimalMin("0.000001")
+    private BigDecimal quantityNet;
+
     private Long unitId;
-    private String unitName;
+
     private BigDecimal rate;
     private BigDecimal amount;
 
     private Long taxId;
-    private String taxName;
-    private Boolean taxExempt;
     private BigDecimal taxPercent;
+
     private BigDecimal lineDiscount;
 }
-

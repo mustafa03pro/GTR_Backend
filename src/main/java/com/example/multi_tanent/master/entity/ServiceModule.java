@@ -30,13 +30,13 @@ public enum ServiceModule {
     // Production Module
     PRODUCTION(false, "com.example.multi_tanent.production.entity", USER),
 
-    // Purchases module
-    PURCHASES(false, "com.example.multi_tanent.purchases.entity", USER), // Corrected comment
-
-
-
     // Sales Module
-    SALES(false, "com.example.multi_tanent.sales.entity");
+    SALES(false, "com.example.multi_tanent.sales.entity"),
+    
+    // Purchases Module
+    PURCHASES(false, "com.example.multi_tanent.purchases.entity", PRODUCTION, USER);
+
+    
 
     private final boolean isFoundation;
     private final List<String> entityPackages;
